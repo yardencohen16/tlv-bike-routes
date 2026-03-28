@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import uvicorn
 
-from flat_route import load_graph, fetch_elevations, annotate_elevation_gain, get_flat_route, compute_route_stats
+from flat_route import load_graph, fetch_elevations, annotate_elevation_gain, get_flat_route, get_shortest_route, compute_route_stats
 
 CACHE_FILE = "graph_cache.pkl"
 
@@ -104,6 +104,49 @@ def route(
         "elevation_gain_m": round(elevation_gain_m, 1),
         "waypoints": len(coords),
         "coordinates": [{"lat": lat, "lon": lon} for lat, lon in coords],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Compare endpoint — returns both flat and shortest routes
+# ---------------------------------------------------------------------------
+
+@app.get("/compare")
+def compare(
+    start_lat: float = Query(...),
+    start_lon: float = Query(...),
+    end_lat:   float = Query(...),
+    end_lon:   float = Query(...),
+):
+    G = state.get("graph")
+    if G is None:
+        raise HTTPException(status_code=503, detail="Graph not loaded yet")
+
+    try:
+        origin = (start_lat, start_lon)
+        dest   = (end_lat,   end_lon)
+
+        flat_coords    = get_flat_route(G, origin, dest)
+        short_coords   = get_shortest_route(G, origin, dest)
+
+        flat_dist,  flat_gain  = compute_route_stats(G, flat_coords)
+        short_dist, short_gain = compute_route_stats(G, short_coords)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "flat": {
+            "distance_km":      round(flat_dist,  3),
+            "elevation_gain_m": round(flat_gain,  1),
+            "waypoints":        len(flat_coords),
+            "coordinates":      [{"lat": lat, "lon": lon} for lat, lon in flat_coords],
+        },
+        "shortest": {
+            "distance_km":      round(short_dist,  3),
+            "elevation_gain_m": round(short_gain,  1),
+            "waypoints":        len(short_coords),
+            "coordinates":      [{"lat": lat, "lon": lon} for lat, lon in short_coords],
+        },
     }
 
 

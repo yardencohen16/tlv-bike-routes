@@ -155,22 +155,31 @@
       height: 1px; background: #f0f0f0; margin: 4px 0 10px;
     }
 
-    /* ── Go button ── */
-    #go-btn {
-      width: 100%;
+    /* ── Buttons row ── */
+    .btn-row { display: flex; gap: 8px; }
+
+    #go-btn, #compare-btn {
+      flex: 1;
       padding: 12px;
-      background: #4285f4;
-      color: #fff;
       border: none;
       border-radius: 10px;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: background .15s;
       letter-spacing: .01em;
     }
+    #go-btn { background: #4285f4; color: #fff; }
     #go-btn:hover { background: #3367d6; }
     #go-btn:disabled { background: #b0c4f7; cursor: not-allowed; }
+
+    #compare-btn { background: #f1f3f4; color: #444; }
+    #compare-btn:hover { background: #e2e6ea; }
+    #compare-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    @media (min-width: 768px) {
+      #go-btn, #compare-btn { font-size: 15px; padding: 13px; }
+    }
 
     /* ── Info card ── */
     #info-card {
@@ -200,6 +209,49 @@
     .stat-divider {
       width: 1px; background: #f0f0f0; margin: 4px 0;
     }
+
+    /* ── Compare card ── */
+    #compare-card {
+      display: none;
+      margin-top: 10px;
+      border-top: 1px solid #f0f0f0;
+      padding-top: 10px;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #compare-card.visible { display: flex; }
+
+    .compare-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+    }
+    .compare-row.flat    { background: #e8f0fe; }
+    .compare-row.shortest { background: #fce8e6; }
+
+    .compare-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .compare-dot.flat    { background: #4285f4; }
+    .compare-dot.shortest { background: #ea4335; }
+
+    .compare-label { font-size: 12px; font-weight: 600; flex: 1; }
+    .compare-label.flat    { color: #1a56c4; }
+    .compare-label.shortest { color: #c5221f; }
+
+    .compare-stats { font-size: 12px; color: #444; text-align: right; line-height: 1.5; }
+
+    .compare-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-saved { background: #34a853; color: #fff; }
+    .badge-shorter { background: #ea4335; color: #fff; }
 
     /* ── Status / error bar ── */
     #status {
@@ -282,10 +334,13 @@
 
     <div class="divider"></div>
 
-    <!-- Go -->
-    <button id="go-btn">Get flat route</button>
+    <!-- Buttons -->
+    <div class="btn-row">
+      <button id="go-btn">Get flat route</button>
+      <button id="compare-btn">Compare</button>
+    </div>
 
-    <!-- Info card -->
+    <!-- Single route info card -->
     <div id="info-card">
       <div class="stat">
         <div class="stat-value" id="stat-distance">—</div>
@@ -301,6 +356,25 @@
         <div class="stat-value" id="stat-waypoints">—</div>
         <div class="stat-label">waypoints</div>
       </div>
+    </div>
+
+    <!-- Compare card -->
+    <div id="compare-card">
+      <div class="compare-row flat">
+        <span class="compare-dot flat"></span>
+        <span class="compare-label flat">Flattest route</span>
+        <div class="compare-stats">
+          <span id="cmp-flat-dist">—</span> km &nbsp;·&nbsp; <span id="cmp-flat-gain">—</span> m gain
+        </div>
+      </div>
+      <div class="compare-row shortest">
+        <span class="compare-dot shortest"></span>
+        <span class="compare-label shortest">Shortest route</span>
+        <div class="compare-stats">
+          <span id="cmp-short-dist">—</span> km &nbsp;·&nbsp; <span id="cmp-short-gain">—</span> m gain
+        </div>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#555;padding:2px 0" id="cmp-summary"></div>
     </div>
 
     <!-- Status -->
@@ -548,6 +622,87 @@ document.getElementById('go-btn').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Get flat route';
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Compare button
+// ---------------------------------------------------------------------------
+
+let shortLayer = null;
+
+document.getElementById('compare-btn').addEventListener('click', async () => {
+  if (!startCoords) { showStatus('Please set a starting point.', 'error'); return; }
+  if (!endCoords)   { showStatus('Please set a destination.', 'error'); return; }
+
+  const btn = document.getElementById('compare-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:#444"></span>Comparing…';
+  clearStatus();
+
+  // Clear previous layers
+  if (routeLayer)  { map.removeLayer(routeLayer);  routeLayer  = null; }
+  if (shortLayer)  { map.removeLayer(shortLayer);  shortLayer  = null; }
+  document.getElementById('info-card').classList.remove('visible');
+  document.getElementById('compare-card').classList.remove('visible');
+
+  const url = `/compare?` + new URLSearchParams({
+    start_lat: startCoords[0], start_lon: startCoords[1],
+    end_lat:   endCoords[0],   end_lon:   endCoords[1],
+  });
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const data = await resp.json();
+
+    // Draw shortest route first (underneath) in red
+    shortLayer = L.polyline(data.shortest.coordinates.map(c => [c.lat, c.lon]), {
+      color: '#ea4335', weight: 5, opacity: .7, lineJoin: 'round',
+      dashArray: '8 6',
+    }).addTo(map);
+
+    // Draw flat route on top in blue
+    routeLayer = L.polyline(data.flat.coordinates.map(c => [c.lat, c.lon]), {
+      color: '#4285f4', weight: 5, opacity: .9, lineJoin: 'round',
+    }).addTo(map);
+
+    // Fit both routes
+    const allLatLngs = [
+      ...data.flat.coordinates.map(c => [c.lat, c.lon]),
+      ...data.shortest.coordinates.map(c => [c.lat, c.lon]),
+    ];
+    map.fitBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
+
+    // Fill compare card
+    document.getElementById('cmp-flat-dist').textContent  = data.flat.distance_km.toFixed(1);
+    document.getElementById('cmp-flat-gain').textContent  = Math.round(data.flat.elevation_gain_m);
+    document.getElementById('cmp-short-dist').textContent = data.shortest.distance_km.toFixed(1);
+    document.getElementById('cmp-short-gain').textContent = Math.round(data.shortest.elevation_gain_m);
+
+    const gainSaved   = Math.round(data.shortest.elevation_gain_m - data.flat.elevation_gain_m);
+    const distExtra   = (data.flat.distance_km - data.shortest.distance_km).toFixed(1);
+    const sign        = distExtra >= 0 ? '+' : '';
+    document.getElementById('cmp-summary').innerHTML =
+      gainSaved > 0
+        ? `Flat route saves <strong>${gainSaved} m</strong> of climbing for <strong>${sign}${distExtra} km</strong> extra distance`
+        : `Both routes have similar elevation — flat route is <strong>${sign}${distExtra} km</strong> different`;
+
+    document.getElementById('compare-card').classList.add('visible');
+
+  } catch (err) {
+    if (err.message.includes('fetch') || err.message.includes('Failed to fetch')) {
+      showStatus('Cannot reach the route server. Is it running?', 'error');
+    } else {
+      showStatus(`Error: ${err.message}`, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Compare';
   }
 });
 
