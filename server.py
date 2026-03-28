@@ -85,11 +85,13 @@ app.add_middleware(
 
 @app.get("/")
 def index():
-    return FileResponse("index.html")
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.get("/logo.png")
 def logo():
-    return FileResponse("logo.png")
+    return FileResponse(os.path.join(BASE_DIR, "logo.png"))
 
 
 # ---------------------------------------------------------------------------
