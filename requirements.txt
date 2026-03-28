@@ -5,3 +5,4 @@ numpy
 fastapi
 uvicorn
 aiofiles
+slowapi

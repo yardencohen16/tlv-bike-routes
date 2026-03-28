@@ -13,9 +13,13 @@ Endpoint:
 import os
 import pickle
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import uvicorn
 
 from flat_route import load_graph, fetch_elevations, annotate_elevation_gain, get_flat_route, get_shortest_route, compute_route_stats
@@ -59,8 +63,14 @@ async def lifespan(app: FastAPI):
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="TLV Flat Bike Router", lifespan=lifespan)
+limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
 
+app = FastAPI(title="TLV Flat Bike Router", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda req, exc: __import__('fastapi').responses.JSONResponse(
+    status_code=429, content={"detail": "Too many requests — please wait a moment."}
+))
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -87,7 +97,9 @@ def logo():
 # ---------------------------------------------------------------------------
 
 @app.get("/route")
+@limiter.limit("10/minute")
 def route(
+    request: Request,
     start_lat: float = Query(..., description="Start latitude"),
     start_lon: float = Query(..., description="Start longitude"),
     end_lat:   float = Query(..., description="End latitude"),
@@ -116,7 +128,9 @@ def route(
 # ---------------------------------------------------------------------------
 
 @app.get("/compare")
+@limiter.limit("10/minute")
 def compare(
+    request: Request,
     start_lat: float = Query(...),
     start_lon: float = Query(...),
     end_lat:   float = Query(...),
