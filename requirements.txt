@@ -1,0 +1,6 @@
+osmnx
+networkx
+requests
+numpy
+fastapi
+uvicorn

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>TLV Flat Bike Routes</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    /* ── Full-screen map ── */
+    #map { position: fixed; inset: 0; z-index: 0; }
+
+    /* ════════════════════════════════
+       MOBILE  (default — top card)
+       ════════════════════════════════ */
+    #panel {
+      position: fixed;
+      top: 12px; left: 50%; transform: translateX(-50%);
+      z-index: 1000;
+      width: min(420px, calc(100vw - 24px));
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.18);
+      overflow: visible;
+    }
+
+    #panel-inner { padding: 12px 12px 10px; }
+
+    /* ════════════════════════════════
+       DESKTOP  (≥ 768px — left sidebar)
+       ════════════════════════════════ */
+    @media (min-width: 768px) {
+      #map { left: 380px; }   /* sidebar width */
+
+      #panel {
+        top: 0; left: 0;
+        transform: none;
+        width: 380px;
+        height: 100vh;
+        border-radius: 0;
+        box-shadow: 2px 0 16px rgba(0,0,0,.12);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #panel-inner {
+        padding: 20px 16px 16px;
+        flex: 1;
+      }
+
+      /* Taller logo area */
+      #panel-logo {
+        display: flex !important;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      #go-btn { padding: 14px; font-size: 16px; }
+
+      .stat-value { font-size: 28px; }
+
+      /* Push attribution to bottom on desktop */
+      #panel-footer {
+        display: block !important;
+        padding: 12px 16px;
+        font-size: 11px;
+        color: #bbb;
+        border-top: 1px solid #f0f0f0;
+        text-align: center;
+      }
+    }
+
+    /* ── Search rows ── */
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-start { background: #34a853; }
+    .dot-end   { background: #ea4335; }
+
+    .search-input {
+      flex: 1;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .15s;
+      background: #f8f8f8;
+    }
+    .search-input:focus { border-color: #4285f4; background: #fff; }
+
+    .gps-btn {
+      width: 38px; height: 38px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      background: #f8f8f8;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+    .gps-btn:hover { background: #e8f0fe; border-color: #4285f4; }
+    .gps-btn.active { background: #e8f0fe; border-color: #4285f4; }
+
+    /* ── Autocomplete dropdown ── */
+    .autocomplete-list {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 20px; right: 0;
+      background: #fff;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12);
+      z-index: 2000;
+      overflow: hidden;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .autocomplete-list.open { display: block; }
+    .autocomplete-item {
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+      line-height: 1.3;
+    }
+    .autocomplete-item:last-child { border-bottom: none; }
+    .autocomplete-item:hover { background: #f5f5f5; }
+    .autocomplete-item .place-name { font-weight: 500; }
+    .autocomplete-item .place-detail { color: #888; font-size: 12px; }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px; background: #f0f0f0; margin: 4px 0 10px;
+    }
+
+    /* ── Go button ── */
+    #go-btn {
+      width: 100%;
+      padding: 12px;
+      background: #4285f4;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+      letter-spacing: .01em;
+    }
+    #go-btn:hover { background: #3367d6; }
+    #go-btn:disabled { background: #b0c4f7; cursor: not-allowed; }
+
+    /* ── Info card ── */
+    #info-card {
+      display: none;
+      margin-top: 10px;
+      border-top: 1px solid #f0f0f0;
+      padding-top: 10px;
+    }
+    #info-card.visible { display: flex; gap: 0; }
+
+    .stat {
+      flex: 1;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-top: 2px;
+    }
+    .stat-divider {
+      width: 1px; background: #f0f0f0; margin: 4px 0;
+    }
+
+    /* ── Status / error bar ── */
+    #status {
+      display: none;
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    #status.info    { background: #e8f0fe; color: #1a56c4; display: block; }
+    #status.error   { background: #fce8e6; color: #c5221f; display: block; }
+    #status.success { background: #e6f4ea; color: #1e7e34; display: block; }
+
+    /* ── Locate me fab (bottom right) ── */
+    #locate-fab {
+      position: fixed;
+      bottom: 24px; right: 16px;
+      z-index: 1000;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: #fff;
+      border: none;
+      box-shadow: 0 2px 12px rgba(0,0,0,.2);
+      font-size: 22px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #locate-fab:hover { background: #f0f4ff; }
+
+    /* ── Spinner overlay on button ── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Panel (top card on mobile, left sidebar on desktop) -->
+<div id="panel">
+  <div id="panel-inner">
+
+    <!-- Logo (desktop only) -->
+    <div id="panel-logo" style="display:none">
+      <span style="font-size:26px">🚲</span>
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#1a1a1a">TLV Flat Routes</div>
+        <div style="font-size:12px;color:#888">Cycling without the hills</div>
+      </div>
+    </div>
+
+    <!-- Start -->
+    <div class="search-row" id="start-row">
+      <span class="dot dot-start"></span>
+      <input id="start-input" class="search-input" type="text"
+             placeholder="Starting point" autocomplete="off" />
+      <button class="gps-btn" id="gps-btn" title="Use my location">📍</button>
+      <div class="autocomplete-list" id="start-list"></div>
+    </div>
+
+    <!-- End -->
+    <div class="search-row" id="end-row">
+      <span class="dot dot-end"></span>
+      <input id="end-input" class="search-input" type="text"
+             placeholder="Destination" autocomplete="off" />
+      <div class="autocomplete-list" id="end-list"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Go -->
+    <button id="go-btn">Get flat route</button>
+
+    <!-- Info card -->
+    <div id="info-card">
+      <div class="stat">
+        <div class="stat-value" id="stat-distance">—</div>
+        <div class="stat-label">km</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <div class="stat-value" id="stat-gain">—</div>
+        <div class="stat-label">m elevation gain</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <div class="stat-value" id="stat-waypoints">—</div>
+        <div class="stat-label">waypoints</div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div id="status"></div>
+
+  </div>
+
+  <!-- Footer (desktop only) -->
+  <div id="panel-footer" style="display:none">
+    Map data © OpenStreetMap contributors
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Map setup
+// ---------------------------------------------------------------------------
+const map = L.map('map', { zoomControl: false }).setView([32.0853, 34.7818], 14);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+const isMobile = window.innerWidth < 768;
+L.control.zoom({ position: isMobile ? 'bottomleft' : 'bottomright' }).addTo(map);
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let startCoords = null;   // [lat, lon]
+let endCoords   = null;
+let routeLayer  = null;
+let startMarker = null;
+let endMarker   = null;
+let autocompleteTimers = {};
+
+// ---------------------------------------------------------------------------
+// Markers
+// ---------------------------------------------------------------------------
+function makeIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<svg width="28" height="40" viewBox="0 0 28 40" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 0C6.268 0 0 6.268 0 14c0 9.333 14 26 14 26S28 23.333 28 14C28 6.268 21.732 0 14 0z"
+            fill="${color}" stroke="#fff" stroke-width="2"/>
+      <circle cx="14" cy="14" r="5" fill="#fff"/>
+    </svg>`,
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+  });
+}
+
+function setStartMarker(latlng) {
+  if (startMarker) map.removeLayer(startMarker);
+  startMarker = L.marker(latlng, { icon: makeIcon('#34a853') }).addTo(map);
+}
+
+function setEndMarker(latlng) {
+  if (endMarker) map.removeLayer(endMarker);
+  endMarker = L.marker(latlng, { icon: makeIcon('#ea4335') }).addTo(map);
+}
+
+// ---------------------------------------------------------------------------
+// Nominatim autocomplete
+// ---------------------------------------------------------------------------
+async function nominatimSearch(query) {
+  const url = `https://nominatim.openstreetmap.org/search?` +
+    new URLSearchParams({
+      q: query + ', Tel Aviv',
+      format: 'json',
+      limit: 5,
+      addressdetails: 1,
+      countrycodes: 'il',
+    });
+  const resp = await fetch(url, {
+    headers: { 'Accept-Language': 'en' }
+  });
+  return await resp.json();
+}
+
+function renderAutocomplete(listEl, results, onSelect) {
+  listEl.innerHTML = '';
+  if (!results.length) { listEl.classList.remove('open'); return; }
+
+  results.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'autocomplete-item';
+    const parts = r.display_name.split(', ');
+    const name   = parts.slice(0, 2).join(', ');
+    const detail = parts.slice(2, 4).join(', ');
+    item.innerHTML = `<div class="place-name">${name}</div><div class="place-detail">${detail}</div>`;
+    item.addEventListener('mousedown', e => {
+      e.preventDefault();
+      onSelect(r);
+      listEl.classList.remove('open');
+    });
+    listEl.appendChild(item);
+  });
+  listEl.classList.add('open');
+}
+
+function wireAutocomplete(inputEl, listEl, coordSetter, markerFn) {
+  inputEl.addEventListener('input', () => {
+    const val = inputEl.value.trim();
+    clearTimeout(autocompleteTimers[inputEl.id]);
+    if (val.length < 3) { listEl.classList.remove('open'); return; }
+
+    autocompleteTimers[inputEl.id] = setTimeout(async () => {
+      try {
+        const results = await nominatimSearch(val);
+        renderAutocomplete(listEl, results, r => {
+          inputEl.value = r.display_name.split(', ').slice(0, 2).join(', ');
+          const coords = [parseFloat(r.lat), parseFloat(r.lon)];
+          coordSetter(coords);
+          markerFn(coords);
+          map.setView(coords, 16);
+        });
+      } catch (_) {}
+    }, 350);
+  });
+
+  inputEl.addEventListener('blur', () => {
+    setTimeout(() => listEl.classList.remove('open'), 150);
+  });
+}
+
+wireAutocomplete(
+  document.getElementById('start-input'),
+  document.getElementById('start-list'),
+  c => { startCoords = c; },
+  c => setStartMarker(c)
+);
+
+wireAutocomplete(
+  document.getElementById('end-input'),
+  document.getElementById('end-list'),
+  c => { endCoords = c; },
+  c => setEndMarker(c)
+);
+
+// ---------------------------------------------------------------------------
+// GPS — use my location
+// ---------------------------------------------------------------------------
+document.getElementById('gps-btn').addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    showStatus('Geolocation not supported by your browser.', 'error');
+    return;
+  }
+  const btn = document.getElementById('gps-btn');
+  btn.textContent = '⏳';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const coords = [pos.coords.latitude, pos.coords.longitude];
+      startCoords = coords;
+      document.getElementById('start-input').value = 'My location';
+      setStartMarker(coords);
+      map.setView(coords, 15);
+      btn.textContent = '📍';
+      btn.classList.add('active');
+    },
+    err => {
+      showStatus('Could not get your location. Check browser permissions.', 'error');
+      btn.textContent = '📍';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Map click — tap to set points
+// ---------------------------------------------------------------------------
+let tapMode = null;  // unused for now; keep for future
+
+// ---------------------------------------------------------------------------
+// Status helper
+// ---------------------------------------------------------------------------
+function showStatus(msg, type = 'info') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = type;
+}
+function clearStatus() {
+  const el = document.getElementById('status');
+  el.className = '';
+  el.textContent = '';
+}
+
+// ---------------------------------------------------------------------------
+// Route fetch
+// ---------------------------------------------------------------------------
+document.getElementById('go-btn').addEventListener('click', async () => {
+  if (!startCoords) { showStatus('Please set a starting point.', 'error'); return; }
+  if (!endCoords)   { showStatus('Please set a destination.', 'error'); return; }
+
+  const btn = document.getElementById('go-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Finding flattest route…';
+  clearStatus();
+  document.getElementById('info-card').classList.remove('visible');
+
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+
+  const url = `/route?` + new URLSearchParams({
+    start_lat: startCoords[0],
+    start_lon: startCoords[1],
+    end_lat:   endCoords[0],
+    end_lon:   endCoords[1],
+  });
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const data = await resp.json();
+    const latlngs = data.coordinates.map(c => [c.lat, c.lon]);
+
+    routeLayer = L.polyline(latlngs, {
+      color: '#4285f4',
+      weight: 5,
+      opacity: .85,
+      lineJoin: 'round',
+    }).addTo(map);
+
+    map.fitBounds(routeLayer.getBounds(), { padding: [60, 60] });
+
+    document.getElementById('stat-distance').textContent  = data.distance_km.toFixed(1);
+    document.getElementById('stat-gain').textContent      = Math.round(data.elevation_gain_m);
+    document.getElementById('stat-waypoints').textContent = data.waypoints;
+    document.getElementById('info-card').classList.add('visible');
+
+    showStatus(`Flattest route found — ${data.distance_km.toFixed(1)} km with only ${Math.round(data.elevation_gain_m)} m of climbing.`, 'success');
+
+  } catch (err) {
+    if (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
+      showStatus('Cannot reach the route server. Is python3 server.py running on port 8000?', 'error');
+    } else {
+      showStatus(`Error: ${err.message}`, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Get flat route';
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Close autocomplete on map click
+// ---------------------------------------------------------------------------
+map.on('click', () => {
+  document.querySelectorAll('.autocomplete-list').forEach(el => el.classList.remove('open'));
+});
+</script>
+</body>
+</html>
