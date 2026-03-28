@@ -4,3 +4,4 @@ requests
 numpy
 fastapi
 uvicorn
+aiofiles
