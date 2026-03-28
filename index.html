@@ -449,11 +449,12 @@ async function nominatimSearch(query) {
       limit: 7,
       addressdetails: 1,
       countrycodes: 'il',
-      viewbox: '34.73,32.15,34.84,31.98',  // Tel Aviv bounding box — biases results toward TLV
-      bounded: 0,                            // but still allows results outside if needed
+      viewbox: '34.73,32.15,34.84,31.98',
+      bounded: 0,
     });
+  // Accept Hebrew + English so Israeli street names (stored in Hebrew in OSM) are matched
   const resp = await fetch(url, {
-    headers: { 'Accept-Language': 'en' }
+    headers: { 'Accept-Language': 'he,en' }
   });
   return await resp.json();
 }

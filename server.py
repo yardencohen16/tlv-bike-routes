@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from flat_route import load_graph, fetch_elevations, annotate_elevation_gain, get_flat_route, get_shortest_route, compute_route_stats
@@ -70,12 +71,16 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Serve the UI
+# Serve the UI + static assets
 # ---------------------------------------------------------------------------
 
 @app.get("/")
 def index():
     return FileResponse("index.html")
+
+@app.get("/logo.png")
+def logo():
+    return FileResponse("logo.png")
 
 
 # ---------------------------------------------------------------------------
