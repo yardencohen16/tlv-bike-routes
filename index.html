@@ -370,11 +370,13 @@ function setEndMarker(latlng) {
 async function nominatimSearch(query) {
   const url = `https://nominatim.openstreetmap.org/search?` +
     new URLSearchParams({
-      q: query + ', Tel Aviv',
+      q: query,
       format: 'json',
-      limit: 5,
+      limit: 7,
       addressdetails: 1,
       countrycodes: 'il',
+      viewbox: '34.73,32.15,34.84,31.98',  // Tel Aviv bounding box — biases results toward TLV
+      bounded: 0,                            // but still allows results outside if needed
     });
   const resp = await fetch(url, {
     headers: { 'Accept-Language': 'en' }
@@ -407,7 +409,7 @@ function wireAutocomplete(inputEl, listEl, coordSetter, markerFn) {
   inputEl.addEventListener('input', () => {
     const val = inputEl.value.trim();
     clearTimeout(autocompleteTimers[inputEl.id]);
-    if (val.length < 3) { listEl.classList.remove('open'); return; }
+    if (val.length < 2) { listEl.classList.remove('open'); return; }
 
     autocompleteTimers[inputEl.id] = setTimeout(async () => {
       try {
