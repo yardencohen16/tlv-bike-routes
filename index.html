@@ -451,11 +451,9 @@ async function nominatimSearch(query) {
       countrycodes: 'il',
       viewbox: '34.73,32.15,34.84,31.98',
       bounded: 0,
+      'accept-language': 'he,en',  // URL param avoids CORS preflight
     });
-  // Accept Hebrew + English so Israeli street names (stored in Hebrew in OSM) are matched
-  const resp = await fetch(url, {
-    headers: { 'Accept-Language': 'he,en' }
-  });
+  const resp = await fetch(url);
   return await resp.json();
 }
 
