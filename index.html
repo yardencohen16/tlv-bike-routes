@@ -442,19 +442,17 @@ function setEndMarker(latlng) {
 // Nominatim autocomplete
 // ---------------------------------------------------------------------------
 async function nominatimSearch(query) {
-  const url = `https://nominatim.openstreetmap.org/search?` +
-    new URLSearchParams({
-      q: query,
-      format: 'json',
-      limit: 7,
-      addressdetails: 1,
-      countrycodes: 'il',
-      viewbox: '34.73,32.15,34.84,31.98',
-      bounded: 0,
-      'accept-language': 'he,en',  // URL param avoids CORS preflight
-    });
+  // Photon — OSM-based, handles Hebrew + English, no API key needed
+  const url = `https://photon.komoot.io/api/?` + new URLSearchParams({
+    q: query,
+    limit: 7,
+    lat: 32.0853,
+    lon: 34.7818,
+  });
   const resp = await fetch(url);
-  return await resp.json();
+  const data = await resp.json();
+  // Filter to Israel only
+  return (data.features || []).filter(f => f.properties.country === 'Israel' || f.properties.countrycode === 'IL');
 }
 
 function renderAutocomplete(listEl, results, onSelect) {
@@ -464,9 +462,9 @@ function renderAutocomplete(listEl, results, onSelect) {
   results.forEach(r => {
     const item = document.createElement('div');
     item.className = 'autocomplete-item';
-    const parts = r.display_name.split(', ');
-    const name   = parts.slice(0, 2).join(', ');
-    const detail = parts.slice(2, 4).join(', ');
+    const p = r.properties;
+    const name   = [p.name, p.housenumber, p.street].filter(Boolean).join(' ') || p.name || '—';
+    const detail = [p.city || p.town || p.village, p.state].filter(Boolean).join(', ');
     item.innerHTML = `<div class="place-name">${name}</div><div class="place-detail">${detail}</div>`;
     item.addEventListener('mousedown', e => {
       e.preventDefault();
@@ -488,8 +486,11 @@ function wireAutocomplete(inputEl, listEl, coordSetter, markerFn) {
       try {
         const results = await nominatimSearch(val);
         renderAutocomplete(listEl, results, r => {
-          inputEl.value = r.display_name.split(', ').slice(0, 2).join(', ');
-          const coords = [parseFloat(r.lat), parseFloat(r.lon)];
+          const p = r.properties;
+          const label = [p.name, p.street, p.city || p.town].filter(Boolean).join(', ');
+          inputEl.value = label;
+          const [lon, lat] = r.geometry.coordinates;
+          const coords = [lat, lon];
           coordSetter(coords);
           markerFn(coords);
           map.setView(coords, 16);
